@@ -7,8 +7,8 @@ async function createStripeProducts() {
   console.log('Creating Stripe products and prices...');
 
   const baseProduct = await stripe.products.create({
-    name: 'Base',
-    description: 'Base subscription plan',
+    name: 'Vendedor',
+    description: 'Plan Vendedor: 1 cuenta de MercadoLibre',
   });
 
   await stripe.prices.create({
@@ -22,8 +22,8 @@ async function createStripeProducts() {
   });
 
   const plusProduct = await stripe.products.create({
-    name: 'Plus',
-    description: 'Plus subscription plan',
+    name: 'Agencia',
+    description: 'Plan Agencia: hasta 3 cuentas de MercadoLibre',
   });
 
   await stripe.prices.create({

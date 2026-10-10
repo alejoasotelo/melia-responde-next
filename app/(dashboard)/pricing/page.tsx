@@ -12,8 +12,8 @@ export default async function PricingPage() {
     getStripeProducts(),
   ]);
 
-  const basePlan = products.find((product) => product.name === 'Base');
-  const plusPlan = products.find((product) => product.name === 'Plus');
+  const basePlan = products.find((product) => product.name === 'Vendedor');
+  const plusPlan = products.find((product) => product.name === 'Agencia');
 
   const basePrice = prices.find((price) => price.productId === basePlan?.id);
   const plusPrice = prices.find((price) => price.productId === plusPlan?.id);
@@ -22,25 +22,25 @@ export default async function PricingPage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="grid md:grid-cols-2 gap-8 max-w-xl mx-auto">
         <PricingCard
-          name={basePlan?.name || 'Base'}
+          name={basePlan?.name || 'Vendedor'}
           price={basePrice?.unitAmount || 800}
           interval={basePrice?.interval || 'month'}
           trialDays={basePrice?.trialPeriodDays || 7}
           features={[
-            'Unlimited Usage',
+            '1 MercadoLibre account',
             'Unlimited Workspace Members',
             'Email Support',
           ]}
           priceId={basePrice?.id}
         />
         <PricingCard
-          name={plusPlan?.name || 'Plus'}
+          name={plusPlan?.name || 'Agencia'}
           price={plusPrice?.unitAmount || 1200}
           interval={plusPrice?.interval || 'month'}
           trialDays={plusPrice?.trialPeriodDays || 7}
           features={[
-            'Everything in Base, and:',
-            'Early Access to New Features',
+            'Everything in Vendedor, and:',
+            'Up to 3 MercadoLibre accounts',
             '24/7 Support + Slack Access',
           ]}
           priceId={plusPrice?.id}

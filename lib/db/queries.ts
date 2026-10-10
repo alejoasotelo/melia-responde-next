@@ -1,6 +1,6 @@
 import { desc, and, eq, isNull } from 'drizzle-orm';
 import { db } from './drizzle';
-import { activityLogs, teamMembers, teams, users } from './schema';
+import { activityLogs, meliAccounts, teamMembers, teams, users } from './schema';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/session';
 
@@ -127,4 +127,20 @@ export async function getTeamForUser() {
   });
 
   return result?.team || null;
+}
+
+// Never selects the token columns, so these rows are safe to hand to the UI.
+export async function getMeliAccountsForTeam(teamId: number) {
+  return await db
+    .select({
+      id: meliAccounts.id,
+      meliUserId: meliAccounts.meliUserId,
+      nickname: meliAccounts.nickname,
+      siteId: meliAccounts.siteId,
+      tokenExpiresAt: meliAccounts.tokenExpiresAt,
+      createdAt: meliAccounts.createdAt
+    })
+    .from(meliAccounts)
+    .where(eq(meliAccounts.teamId, teamId))
+    .orderBy(meliAccounts.createdAt);
 }

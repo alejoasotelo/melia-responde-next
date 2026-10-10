@@ -5,6 +5,7 @@ import {
   text,
   timestamp,
   integer,
+  bigint,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -68,7 +69,26 @@ export const invitations = pgTable('invitations', {
   status: varchar('status', { length: 20 }).notNull().default('pending'),
 });
 
+export const meliAccounts = pgTable('meli_accounts', {
+  id: serial('id').primaryKey(),
+  teamId: integer('team_id')
+    .notNull()
+    .references(() => teams.id),
+  connectedBy: integer('connected_by').references(() => users.id),
+  // MercadoLibre user id. A MercadoLibre account can only be linked to one team.
+  meliUserId: bigint('meli_user_id', { mode: 'number' }).notNull().unique(),
+  nickname: varchar('nickname', { length: 100 }),
+  siteId: varchar('site_id', { length: 10 }),
+  // Encrypted with lib/meli/crypto.ts, never store these in plain text.
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token'),
+  tokenExpiresAt: timestamp('token_expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
 export const teamsRelations = relations(teams, ({ many }) => ({
+  meliAccounts: many(meliAccounts),
   teamMembers: many(teamMembers),
   activityLogs: many(activityLogs),
   invitations: many(invitations),
@@ -101,6 +121,17 @@ export const teamMembersRelations = relations(teamMembers, ({ one }) => ({
   }),
 }));
 
+export const meliAccountsRelations = relations(meliAccounts, ({ one }) => ({
+  team: one(teams, {
+    fields: [meliAccounts.teamId],
+    references: [teams.id],
+  }),
+  connectedByUser: one(users, {
+    fields: [meliAccounts.connectedBy],
+    references: [users.id],
+  }),
+}));
+
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
   team: one(teams, {
     fields: [activityLogs.teamId],
@@ -120,6 +151,8 @@ export type TeamMember = typeof teamMembers.$inferSelect;
 export type NewTeamMember = typeof teamMembers.$inferInsert;
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type NewActivityLog = typeof activityLogs.$inferInsert;
+export type MeliAccount = typeof meliAccounts.$inferSelect;
+export type NewMeliAccount = typeof meliAccounts.$inferInsert;
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
 export type TeamDataWithMembers = Team & {
@@ -139,4 +172,6 @@ export enum ActivityType {
   REMOVE_TEAM_MEMBER = 'REMOVE_TEAM_MEMBER',
   INVITE_TEAM_MEMBER = 'INVITE_TEAM_MEMBER',
   ACCEPT_INVITATION = 'ACCEPT_INVITATION',
+  CONNECT_MELI_ACCOUNT = 'CONNECT_MELI_ACCOUNT',
+  DISCONNECT_MELI_ACCOUNT = 'DISCONNECT_MELI_ACCOUNT',
 }
