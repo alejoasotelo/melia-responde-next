@@ -69,23 +69,29 @@ export const invitations = pgTable('invitations', {
   status: varchar('status', { length: 20 }).notNull().default('pending'),
 });
 
-export const meliAccounts = pgTable('meli_accounts', {
-  id: serial('id').primaryKey(),
-  teamId: integer('team_id')
-    .notNull()
-    .references(() => teams.id),
-  connectedBy: integer('connected_by').references(() => users.id),
-  // MercadoLibre user id. A MercadoLibre account can only be linked to one team.
-  meliUserId: bigint('meli_user_id', { mode: 'number' }).notNull().unique(),
-  nickname: varchar('nickname', { length: 100 }),
-  siteId: varchar('site_id', { length: 10 }),
-  // Encrypted with lib/meli/crypto.ts, never store these in plain text.
-  accessToken: text('access_token').notNull(),
-  refreshToken: text('refresh_token'),
-  tokenExpiresAt: timestamp('token_expires_at').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+// One row per (team, MercadoLibre account): the same MercadoLibre account can
+// be linked to several teams (e.g. an agency taking over from another), each
+// with its own tokens, drafts and listing context.
+export const meliAccounts = pgTable(
+  'meli_accounts',
+  {
+    id: serial('id').primaryKey(),
+    teamId: integer('team_id')
+      .notNull()
+      .references(() => teams.id),
+    connectedBy: integer('connected_by').references(() => users.id),
+    meliUserId: bigint('meli_user_id', { mode: 'number' }).notNull(),
+    nickname: varchar('nickname', { length: 100 }),
+    siteId: varchar('site_id', { length: 10 }),
+    // Encrypted with lib/meli/crypto.ts, never store these in plain text.
+    accessToken: text('access_token').notNull(),
+    refreshToken: text('refresh_token'),
+    tokenExpiresAt: timestamp('token_expires_at').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.teamId, t.meliUserId)]
+);
 
 // Extra text the seller writes per listing; fed to the AI when drafting answers.
 export const meliItemContexts = pgTable(
@@ -153,6 +159,7 @@ export const teamMembersRelations = relations(teamMembers, ({ one }) => ({
     references: [teams.id],
   }),
 }));
+
 
 export const meliAccountsRelations = relations(meliAccounts, ({ one }) => ({
   team: one(teams, {

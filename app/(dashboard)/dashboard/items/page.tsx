@@ -131,7 +131,7 @@ export default async function ItemsPage({
     <section className="flex-1 p-4 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-lg lg:text-2xl font-medium">Publicaciones</h1>
-        {accounts.length > 1 ? (
+        {accounts.length > 1 || ctx.team.planName === 'Agencia' ? (
           <AccountSelector
             basePath="/dashboard/items"
             currentId={current.id}

@@ -21,8 +21,7 @@ const ERRORS: Record<string, string> = {
   limit_reached: 'Alcanzaste el máximo de cuentas de tu plan.',
   denied: 'Cancelaste la autorización en MercadoLibre.',
   invalid_state: 'La solicitud expiró o no es válida. Intentá de nuevo.',
-  oauth_failed: 'No pudimos completar la conexión con MercadoLibre.',
-  already_linked: 'Esa cuenta de MercadoLibre ya está conectada a otro equipo.'
+  oauth_failed: 'No pudimos completar la conexión con MercadoLibre.'
 };
 
 export default async function MeliPage({

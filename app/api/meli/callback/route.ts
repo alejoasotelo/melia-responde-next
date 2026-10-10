@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { count, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { activityLogs, ActivityType, meliAccounts, teams } from '@/lib/db/schema';
 import {
@@ -68,12 +68,14 @@ export async function GET(request: NextRequest) {
     const existing = await tx
       .select()
       .from(meliAccounts)
-      .where(eq(meliAccounts.meliUserId, profile.id))
+      .where(
+        and(
+          eq(meliAccounts.teamId, teamId),
+          eq(meliAccounts.meliUserId, profile.id)
+        )
+      )
       .limit(1);
 
-    if (existing[0] && existing[0].teamId !== teamId) {
-      return 'already_linked' as const;
-    }
     if (existing[0]) {
       // Reconnecting an account we already have: refresh its tokens.
       await tx
