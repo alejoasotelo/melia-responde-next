@@ -144,3 +144,13 @@ export async function getMeliAccountsForTeam(teamId: number) {
     .where(eq(meliAccounts.teamId, teamId))
     .orderBy(meliAccounts.createdAt);
 }
+
+// Full row including encrypted tokens: server-side use only.
+export async function getMeliAccountForTeam(accountId: number, teamId: number) {
+  const result = await db
+    .select()
+    .from(meliAccounts)
+    .where(and(eq(meliAccounts.id, accountId), eq(meliAccounts.teamId, teamId)))
+    .limit(1);
+  return result[0] ?? null;
+}
