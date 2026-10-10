@@ -1,15 +1,26 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { createCheckoutSession, createCustomerPortalSession } from './stripe';
+import { createCheckoutSession, cancelPreapproval, syncPreapproval } from './mercadopago';
 import { withTeam } from '@/lib/auth/middleware';
+import { getMeliContext } from '@/lib/meli/context';
 
 export const checkoutAction = withTeam(async (formData, team) => {
-  const priceId = formData.get('priceId') as string;
-  await createCheckoutSession({ team: team, priceId });
+  const plan = String(formData.get('plan') ?? '');
+  await createCheckoutSession({ team, plan });
 });
 
-export const customerPortalAction = withTeam(async (_, team) => {
-  const portalSession = await createCustomerPortalSession(team);
-  redirect(portalSession.url);
-});
+export async function cancelSubscriptionAction() {
+  const ctx = await getMeliContext();
+  if (!ctx) redirect('/sign-in');
+  if (!ctx.isOwner) {
+    throw new Error('Only team owners can cancel the subscription');
+  }
+
+  const subscriptionId = ctx.team.mpSubscriptionId;
+  if (subscriptionId) {
+    await cancelPreapproval(subscriptionId);
+    await syncPreapproval(subscriptionId);
+  }
+  redirect('/dashboard');
+}

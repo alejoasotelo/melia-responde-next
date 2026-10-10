@@ -1,10 +1,5 @@
 import type { Team } from '@/lib/db/schema';
-
-// Keys are the lowercased Stripe product names.
-const MELI_ACCOUNT_LIMITS: Record<string, number> = {
-  vendedor: 1,
-  agencia: 3
-};
+import { getPlanByName } from '@/lib/payments/plans';
 
 export function getMeliAccountLimit(
   team: Pick<Team, 'planName' | 'subscriptionStatus'>
@@ -12,8 +7,6 @@ export function getMeliAccountLimit(
   const isActive =
     team.subscriptionStatus === 'active' ||
     team.subscriptionStatus === 'trialing';
-  if (!isActive || !team.planName) {
-    return 0;
-  }
-  return MELI_ACCOUNT_LIMITS[team.planName.trim().toLowerCase()] ?? 0;
+  if (!isActive) return 0;
+  return getPlanByName(team.planName)?.maxMeliAccounts ?? 0;
 }

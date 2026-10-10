@@ -1,16 +1,17 @@
 # Next.js SaaS Starter
 
-This is a starter template for building a SaaS application using **Next.js** with support for authentication, Stripe integration for payments, and a dashboard for logged-in users.
+This is a starter template for building a SaaS application using **Next.js** with support for authentication, MercadoPago subscriptions for payments, and a dashboard for logged-in users.
 
 **Demo: [https://next-saas-start.vercel.app/](https://next-saas-start.vercel.app/)**
 
 ## Features
 
 - Marketing landing page (`/`) with animated Terminal element
-- Pricing page (`/pricing`) which connects to Stripe Checkout
+- Pricing page (`/pricing`) (plans Vendedor and Agencia) which connects to MercadoPago subscriptions
 - Dashboard pages with CRUD operations on users/teams
 - Basic RBAC with Owner and Member roles
-- Subscription management with Stripe Customer Portal
+- Subscription changes and cancellation through the MercadoPago API
+- MercadoLibre accounts (1 for Vendedor, up to 3 for Agencia), questions, listings with extra AI context and AI-drafted answers (OpenAI)
 - Email/password authentication with JWTs stored to cookies
 - Global middleware to protect logged-in routes
 - Local middleware to protect Server Actions or validate Zod schemas
@@ -21,7 +22,8 @@ This is a starter template for building a SaaS application using **Next.js** wit
 - **Framework**: [Next.js](https://nextjs.org/)
 - **Database**: [Postgres](https://www.postgresql.org/)
 - **ORM**: [Drizzle](https://orm.drizzle.team/)
-- **Payments**: [Stripe](https://stripe.com/)
+- **Payments**: [MercadoPago](https://www.mercadopago.com.ar/developers)
+- **AI**: [OpenAI](https://platform.openai.com/) Chat Completions API
 - **UI Library**: [shadcn/ui](https://ui.shadcn.com/)
 
 ## Getting Started
@@ -34,11 +36,7 @@ pnpm install
 
 ## Running Locally
 
-[Install](https://docs.stripe.com/stripe-cli) and log in to your Stripe account:
-
-```bash
-stripe login
-```
+You need a MercadoPago application (access token), a MercadoLibre application (client id/secret, with `$BASE_URL/api/meli/callback` as redirect URI) and an OpenAI API key.
 
 Use the included setup script to create your `.env` file:
 
@@ -68,29 +66,21 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser to see the app in action.
 
-You can listen for Stripe webhooks locally through their CLI to handle subscription change events:
-
-```bash
-stripe listen --forward-to localhost:3000/api/stripe/webhook
-```
+MercadoPago and MercadoLibre need a public URL to call back, so expose your local server with a tunnel (ngrok, cloudflared...) and set `BASE_URL` to it.
 
 ## Testing Payments
 
-To test Stripe payments, use the following test card details:
-
-- Card Number: `4242 4242 4242 4242`
-- Expiration: Any future date
-- CVC: Any 3-digit number
+Use MercadoPago [test users and test cards](https://www.mercadopago.com.ar/developers/en/docs/subscriptions/additional-content/your-integrations/test). The subscription payer email must be a test user's email.
 
 ## Going to Production
 
 When you're ready to deploy your SaaS application to production, follow these steps:
 
-### Set up a production Stripe webhook
+### Set up the MercadoPago webhook
 
-1. Go to the Stripe Dashboard and create a new webhook for your production environment.
-2. Set the endpoint URL to your production API route (e.g., `https://yourdomain.com/api/stripe/webhook`).
-3. Select the events you want to listen for (e.g., `checkout.session.completed`, `customer.subscription.updated`).
+1. In your MercadoPago application, open Webhooks and configure the production URL `https://yourdomain.com/api/mercadopago/webhook`.
+2. Enable the "Planes y suscripciones" (`subscription_preapproval`) topic.
+3. Copy the signing secret into `MP_WEBHOOK_SECRET`.
 
 ### Deploy to Vercel
 
@@ -103,10 +93,11 @@ When you're ready to deploy your SaaS application to production, follow these st
 In your Vercel project settings (or during deployment), add all the necessary environment variables. Make sure to update the values for the production environment, including:
 
 1. `BASE_URL`: Set this to your production domain.
-2. `STRIPE_SECRET_KEY`: Use your Stripe secret key for the production environment.
-3. `STRIPE_WEBHOOK_SECRET`: Use the webhook secret from the production webhook you created in step 1.
-4. `POSTGRES_URL`: Set this to your production database URL.
-5. `AUTH_SECRET`: Set this to a random string. `openssl rand -base64 32` will generate one.
+2. `MP_ACCESS_TOKEN` and `MP_WEBHOOK_SECRET`: MercadoPago production credentials.
+3. `MELI_CLIENT_ID` and `MELI_CLIENT_SECRET`: MercadoLibre application credentials.
+4. `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`).
+5. `POSTGRES_URL`: Set this to your production database URL.
+6. `AUTH_SECRET`: Set this to a random string. `openssl rand -base64 32` will generate one.
 
 ## Other Templates
 

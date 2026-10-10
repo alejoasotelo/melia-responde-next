@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Users, Settings, Shield, Activity, Menu, Store, MessageCircleQuestion } from 'lucide-react';
+import { Users, Settings, Shield, Activity, Menu, Store, MessageCircleQuestion, Package } from 'lucide-react';
 
 export default function DashboardLayout({
   children
@@ -22,6 +22,7 @@ export default function DashboardLayout({
       icon: MessageCircleQuestion,
       label: 'Preguntas'
     },
+    { href: '/dashboard/items', icon: Package, label: 'Publicaciones' },
     { href: '/dashboard/general', icon: Settings, label: 'General' },
     { href: '/dashboard/activity', icon: Activity, label: 'Activity' },
     { href: '/dashboard/security', icon: Shield, label: 'Security' }

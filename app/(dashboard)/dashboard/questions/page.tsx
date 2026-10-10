@@ -1,18 +1,21 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { MessageCircleQuestion } from 'lucide-react';
+import { and, eq, inArray } from 'drizzle-orm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { getMeliAccountForTeam, getMeliAccountsForTeam } from '@/lib/db/queries';
+import { db } from '@/lib/db/drizzle';
+import { questionDrafts } from '@/lib/db/schema';
+import { getMeliAccountForTeam } from '@/lib/db/queries';
 import {
   fetchMeliItems,
   MeliApiError,
   searchMeliQuestions,
   type MeliQuestionStatus
 } from '@/lib/meli/api';
-import { getMeliContext } from '@/lib/meli/context';
+import { getMeliContext, selectMeliAccount } from '@/lib/meli/context';
 import { getMeliAccessToken } from '@/lib/meli/tokens';
-import { AccountSelector } from './account-selector';
+import { AccountSelector } from '../account-selector';
+import { QuestionsBoard, type QuestionView } from './questions-board';
 
 const PAGE_SIZE = 20;
 
@@ -36,9 +39,12 @@ export default async function QuestionsPage({
   if (!ctx) redirect('/sign-in');
 
   const params = await searchParams;
-  const accounts = await getMeliAccountsForTeam(ctx.team.id);
+  const { accounts, current } = await selectMeliAccount(
+    ctx.team.id,
+    params.account
+  );
 
-  if (accounts.length === 0) {
+  if (!current) {
     return (
       <section className="flex-1 p-4 lg:p-8">
         <h1 className="text-lg lg:text-2xl font-medium mb-6">Preguntas</h1>
@@ -56,10 +62,6 @@ export default async function QuestionsPage({
     );
   }
 
-  // Falls back to the first account if the param is missing or not ours.
-  const requestedId = Number(params.account);
-  const current =
-    accounts.find((a) => a.id === requestedId) ?? accounts[0];
   const status: MeliQuestionStatus =
     params.status === 'ANSWERED' ? 'ANSWERED' : 'UNANSWERED';
   const page = Math.max(1, Math.floor(Number(params.page)) || 1);
@@ -74,8 +76,7 @@ export default async function QuestionsPage({
   };
 
   let total = 0;
-  let questions: Awaited<ReturnType<typeof searchMeliQuestions>>['questions'] = [];
-  let items: Awaited<ReturnType<typeof fetchMeliItems>> = {};
+  let views: QuestionView[] = [];
   let errorMessage: string | null = null;
 
   try {
@@ -90,11 +91,47 @@ export default async function QuestionsPage({
       limit: PAGE_SIZE
     });
     total = result.total;
-    questions = result.questions;
-    items = await fetchMeliItems(
-      token,
-      questions.map((q) => q.item_id)
-    );
+    const [items, drafts] = await Promise.all([
+      fetchMeliItems(
+        token,
+        result.questions.map((q) => q.item_id)
+      ),
+      result.questions.length
+        ? db
+            .select()
+            .from(questionDrafts)
+            .where(
+              and(
+                eq(questionDrafts.meliAccountId, current.id),
+                inArray(
+                  questionDrafts.meliQuestionId,
+                  result.questions.map((q) => q.id)
+                )
+              )
+            )
+        : []
+    ]);
+    const draftByQuestion = new Map(drafts.map((d) => [d.meliQuestionId, d.draft]));
+
+    views = result.questions.map((question) => {
+      const item = items[question.item_id];
+      return {
+        id: question.id,
+        text: question.text,
+        dateLabel: formatDate(question.date_created),
+        itemId: question.item_id,
+        itemTitle: item?.title ?? null,
+        itemThumbnail: item?.thumbnail ?? null,
+        itemPermalink: item?.permalink ?? null,
+        answer: question.answer
+          ? {
+              text: question.answer.text,
+              dateLabel: formatDate(question.answer.date_created)
+            }
+          : null,
+        draft: draftByQuestion.get(question.id) ?? null
+      };
+    });
   } catch (error) {
     console.error('Error loading MercadoLibre questions:', error);
     errorMessage =
@@ -111,6 +148,7 @@ export default async function QuestionsPage({
         <h1 className="text-lg lg:text-2xl font-medium">Preguntas</h1>
         {accounts.length > 1 ? (
           <AccountSelector
+            basePath="/dashboard/questions"
             currentId={current.id}
             accounts={accounts.map((a) => ({
               id: a.id,
@@ -141,7 +179,7 @@ export default async function QuestionsPage({
         <p className="rounded-md bg-red-50 p-3 text-sm text-red-600">
           {errorMessage}
         </p>
-      ) : questions.length === 0 ? (
+      ) : views.length === 0 ? (
         <Card>
           <CardContent>
             <p className="text-muted-foreground">
@@ -153,61 +191,13 @@ export default async function QuestionsPage({
         </Card>
       ) : (
         <>
-          <ul className="space-y-4">
-            {questions.map((question) => {
-              const item = items[question.item_id];
-              return (
-                <li key={question.id}>
-                  <Card className="gap-3 py-4">
-                    <CardContent className="space-y-3">
-                      <div className="flex items-start gap-3">
-                        {item?.thumbnail ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={item.thumbnail}
-                            alt=""
-                            className="size-12 rounded object-cover"
-                          />
-                        ) : (
-                          <div className="flex size-12 items-center justify-center rounded bg-gray-100">
-                            <MessageCircleQuestion className="size-5 text-gray-400" />
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          {item?.permalink ? (
-                            <a
-                              href={item.permalink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block truncate text-sm font-medium hover:underline"
-                            >
-                              {item.title}
-                            </a>
-                          ) : (
-                            <p className="truncate text-sm font-medium">
-                              {item?.title ?? question.item_id}
-                            </p>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            {question.item_id} · {formatDate(question.date_created)}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-gray-900">{question.text}</p>
-                      {question.answer && (
-                        <div className="rounded-md bg-gray-50 p-3 text-sm">
-                          <p className="text-gray-700">{question.answer.text}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Respondida el {formatDate(question.answer.date_created)}
-                          </p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </li>
-              );
-            })}
-          </ul>
+          <QuestionsBoard
+            // Reset selection when switching account/tab/page.
+            key={`${current.id}-${status}-${page}`}
+            accountId={current.id}
+            questions={views}
+            selectable={status === 'UNANSWERED'}
+          />
 
           {totalPages > 1 && (
             <div className="mt-6 flex items-center justify-between">

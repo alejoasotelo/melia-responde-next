@@ -6,6 +6,7 @@ import {
   timestamp,
   integer,
   bigint,
+  unique,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -25,9 +26,8 @@ export const teams = pgTable('teams', {
   name: varchar('name', { length: 100 }).notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  stripeCustomerId: text('stripe_customer_id').unique(),
-  stripeSubscriptionId: text('stripe_subscription_id').unique(),
-  stripeProductId: text('stripe_product_id'),
+  // MercadoPago preapproval (subscription) id
+  mpSubscriptionId: text('mp_subscription_id').unique(),
   planName: varchar('plan_name', { length: 50 }),
   subscriptionStatus: varchar('subscription_status', { length: 20 }),
 });
@@ -86,6 +86,39 @@ export const meliAccounts = pgTable('meli_accounts', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+// Extra text the seller writes per listing; fed to the AI when drafting answers.
+export const meliItemContexts = pgTable(
+  'meli_item_contexts',
+  {
+    id: serial('id').primaryKey(),
+    meliAccountId: integer('meli_account_id')
+      .notNull()
+      .references(() => meliAccounts.id, { onDelete: 'cascade' }),
+    itemId: varchar('item_id', { length: 20 }).notNull(),
+    context: text('context').notNull(),
+    updatedBy: integer('updated_by').references(() => users.id),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.meliAccountId, t.itemId)]
+);
+
+export const questionDrafts = pgTable(
+  'question_drafts',
+  {
+    id: serial('id').primaryKey(),
+    meliAccountId: integer('meli_account_id')
+      .notNull()
+      .references(() => meliAccounts.id, { onDelete: 'cascade' }),
+    meliQuestionId: bigint('meli_question_id', { mode: 'number' }).notNull(),
+    itemId: varchar('item_id', { length: 20 }).notNull(),
+    draft: text('draft').notNull(),
+    createdBy: integer('created_by').references(() => users.id),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.meliAccountId, t.meliQuestionId)]
+);
 
 export const teamsRelations = relations(teams, ({ many }) => ({
   meliAccounts: many(meliAccounts),
@@ -153,6 +186,8 @@ export type ActivityLog = typeof activityLogs.$inferSelect;
 export type NewActivityLog = typeof activityLogs.$inferInsert;
 export type MeliAccount = typeof meliAccounts.$inferSelect;
 export type NewMeliAccount = typeof meliAccounts.$inferInsert;
+export type MeliItemContext = typeof meliItemContexts.$inferSelect;
+export type QuestionDraft = typeof questionDrafts.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
 export type TeamDataWithMembers = Team & {

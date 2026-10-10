@@ -4,10 +4,12 @@ import { useRouter } from 'next/navigation';
 
 export function AccountSelector({
   accounts,
-  currentId
+  currentId,
+  basePath
 }: {
   accounts: { id: number; label: string }[];
   currentId: number;
+  basePath: string;
 }) {
   const router = useRouter();
 
@@ -19,9 +21,7 @@ export function AccountSelector({
       <select
         id="account"
         value={currentId}
-        onChange={(e) =>
-          router.push(`/dashboard/questions?account=${e.target.value}`)
-        }
+        onChange={(e) => router.push(`${basePath}?account=${e.target.value}`)}
         className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         {accounts.map((account) => (

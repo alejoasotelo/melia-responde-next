@@ -9,7 +9,8 @@ import {
   CardTitle,
   CardFooter
 } from '@/components/ui/card';
-import { customerPortalAction } from '@/lib/payments/actions';
+import { cancelSubscriptionAction } from '@/lib/payments/actions';
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { TeamDataWithMembers, User } from '@/lib/db/schema';
 import { removeTeamMember, inviteTeamMember } from '@/app/(login)/actions';
@@ -55,16 +56,25 @@ function ManageSubscription() {
               <p className="text-sm text-muted-foreground">
                 {teamData?.subscriptionStatus === 'active'
                   ? 'Billed monthly'
-                  : teamData?.subscriptionStatus === 'trialing'
-                  ? 'Trial period'
+                  : teamData?.subscriptionStatus === 'paused'
+                  ? 'Subscription paused'
                   : 'No active subscription'}
               </p>
             </div>
-            <form action={customerPortalAction}>
-              <Button type="submit" variant="outline">
-                Manage Subscription
+            <div className="flex gap-2">
+              <Button asChild variant="outline">
+                <Link href="/pricing">
+                  {teamData?.mpSubscriptionId ? 'Change plan' : 'Choose a plan'}
+                </Link>
               </Button>
-            </form>
+              {teamData?.mpSubscriptionId && (
+                <form action={cancelSubscriptionAction}>
+                  <Button type="submit" variant="outline">
+                    Cancel subscription
+                  </Button>
+                </form>
+              )}
+            </div>
           </div>
         </div>
       </CardContent>

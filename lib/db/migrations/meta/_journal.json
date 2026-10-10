@@ -15,6 +15,20 @@
       "when": 1791613853690,
       "tag": "0001_workable_barracuda",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791614962897,
+      "tag": "0002_cultured_master_mold",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791614971954,
+      "tag": "0003_easy_kylun",
+      "breakpoints": true
     }
   ]
 }

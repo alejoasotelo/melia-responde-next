@@ -146,13 +146,18 @@ export type MeliItemSummary = {
   title: string;
   thumbnail?: string;
   permalink?: string;
+  price?: number;
+  currency_id?: string;
+  available_quantity?: number;
+  status?: string;
 };
 
 // Multiget accepts up to 20 ids per call. Failures are non-fatal: the
-// questions are still useful without the item title.
+// callers are still useful without the item data.
 export async function fetchMeliItems(
   accessToken: string,
-  ids: string[]
+  ids: string[],
+  attributes = 'id,title,thumbnail,permalink'
 ): Promise<Record<string, MeliItemSummary>> {
   const result: Record<string, MeliItemSummary> = {};
   const unique = [...new Set(ids)];
@@ -160,7 +165,7 @@ export async function fetchMeliItems(
   for (let i = 0; i < unique.length; i += 20) {
     const url = new URL(`${API_URL}/items`);
     url.searchParams.set('ids', unique.slice(i, i + 20).join(','));
-    url.searchParams.set('attributes', 'id,title,thumbnail,permalink');
+    url.searchParams.set('attributes', attributes);
     try {
       const res = await fetch(url, {
         headers: { authorization: `Bearer ${accessToken}` },
@@ -176,4 +181,81 @@ export async function fetchMeliItems(
     }
   }
   return result;
+}
+
+async function meliGet<T>(accessToken: string, url: URL | string): Promise<T> {
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: 'no-store'
+  });
+  if (!res.ok) {
+    throw new MeliApiError(`MercadoLibre request failed (${res.status})`, res.status);
+  }
+  return res.json();
+}
+
+export function getMeliQuestion(accessToken: string, questionId: number) {
+  return meliGet<MeliQuestion & { seller_id: number }>(
+    accessToken,
+    `${API_URL}/questions/${questionId}?api_version=4`
+  );
+}
+
+export type MeliItemDetail = {
+  id: string;
+  title: string;
+  price?: number;
+  currency_id?: string;
+  condition?: string;
+  available_quantity?: number;
+  warranty?: string | null;
+  shipping?: { free_shipping?: boolean };
+  attributes?: { name: string; value_name: string | null }[];
+  description?: string;
+};
+
+// Full item data plus its plain-text description, used as AI context.
+export async function fetchMeliItemDetail(
+  accessToken: string,
+  itemId: string
+): Promise<MeliItemDetail> {
+  const [item, description] = await Promise.all([
+    meliGet<MeliItemDetail>(accessToken, `${API_URL}/items/${itemId}`),
+    meliGet<{ plain_text?: string }>(
+      accessToken,
+      `${API_URL}/items/${itemId}/description`
+    ).catch(() => ({ plain_text: '' }))
+  ]);
+  return { ...item, description: description.plain_text };
+}
+
+export type MeliItemStatus = 'active' | 'paused';
+
+export async function searchMeliItemIds(
+  accessToken: string,
+  {
+    sellerId,
+    status,
+    q,
+    offset,
+    limit
+  }: {
+    sellerId: number;
+    status: MeliItemStatus;
+    q?: string;
+    offset: number;
+    limit: number;
+  }
+): Promise<{ total: number; ids: string[] }> {
+  const url = new URL(`${API_URL}/users/${sellerId}/items/search`);
+  url.searchParams.set('status', status);
+  url.searchParams.set('offset', String(offset));
+  url.searchParams.set('limit', String(limit));
+  if (q) url.searchParams.set('q', q);
+
+  const data = await meliGet<{ results?: string[]; paging?: { total?: number } }>(
+    accessToken,
+    url
+  );
+  return { total: data.paging?.total ?? 0, ids: data.results ?? [] };
 }
