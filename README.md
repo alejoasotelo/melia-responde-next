@@ -61,10 +61,10 @@ You can also create new users through the `/sign-up` route.
 Finally, run the Next.js development server:
 
 ```bash
-pnpm dev
+pnpm dev -H melia.local -p 443 --experimental-https
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the app in action.
+Open [https://melia.local](https://melia.local) in your browser to see the app in action.
 
 MercadoPago and MercadoLibre need a public URL to call back, so expose your local server with a tunnel (ngrok, cloudflared...) and set `BASE_URL` to it.
 
@@ -108,3 +108,13 @@ While this template is intentionally minimal and to be used as a learning resour
 - https://makerkit.dev
 - https://zerotoshipped.com
 - https://turbostarter.dev
+
+
+### Cuentas de prueba de MercadoLibre
+
+```bash
+USUARIO_COMPRADOR_EMAIL="test_user_3533615282838537089@testuser.com"
+USUARIO_COMPRADOR_PASSWORD="OApONI8sxp"
+USUARIO_VENDEDOR_EMAIL="test_user_4067033952019813491@testuser.com"
+USUARIO_VENDEDOR_PASSWORD="VkFTk0dPaO"
+```
