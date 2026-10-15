@@ -68,6 +68,19 @@ Open [https://melia.local](https://melia.local) in your browser to see the app i
 
 MercadoPago and MercadoLibre need a public URL to call back, so expose your local server with a tunnel (ngrok, cloudflared...) and set `BASE_URL` to it.
 
+## Examinar PosgreSQL
+
+You can use Adminer to examine your local PostgreSQL database.
+
+1. Open [http://localhost:8080](http://localhost:8080) in your browser.
+2. Select `PostgreSQL` as the system.
+3. Enter the following connection details:
+   - Server: `postgres`
+   - Username: `postgres`
+   - Password: `postgres`
+   - Database: `postgres`
+4. Click "Login" to access the database.
+
 ## Testing Payments
 
 Use MercadoPago [test users and test cards](https://www.mercadopago.com.ar/developers/en/docs/subscriptions/additional-content/your-integrations/test). The subscription payer email must be a test user's email.

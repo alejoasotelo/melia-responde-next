@@ -5,7 +5,7 @@ import { getUser, getTeamForUser } from '@/lib/db/queries';
 import { SWRConfig } from 'swr';
 
 export const metadata: Metadata = {
-  title: 'Next.js SaaS Starter',
+  title: 'MelIA Responde',
   description: 'Responde las preguntas de MercadoLibre con ayuda de IA.'
 };
 
