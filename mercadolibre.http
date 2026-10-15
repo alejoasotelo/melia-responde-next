@@ -1,0 +1,75 @@
+### Variables
+# Access token de la cuenta (la app lo guarda cifrado en la base; obtenelo con el flujo OAuth de abajo)
+@baseUrl = https://api.mercadolibre.com
+@token = {{access_token}}
+@sellerId = 3320600648
+@itemId = MLA3992358166
+@clientId = 2397514598313144
+@clientSecret = {{$shared meliClientSecret}}
+# BASE_URL de la app (el mismo que tiene en .env, p. ej. el túnel)
+@appBaseUrl = https://REEMPLAZAR
+
+### 1. Perfil del usuario logueado (de acá sale el sellerId / user_id)
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{token}}
+
+### 2. Publicaciones activas del usuario (IDs)
+# Máximo 50 por página. Para paginar, cambiar offset.
+GET {{baseUrl}}/users/{{sellerId}}/items/search?status=active&offset=0&limit=50
+Authorization: Bearer {{token}}
+
+### 2b. Publicaciones pausadas
+GET {{baseUrl}}/users/{{sellerId}}/items/search?status=paused&offset=0&limit=50
+Authorization: Bearer {{token}}
+
+### 3. Detalle de publicaciones (multiget, hasta 20 IDs por llamada)
+# Pegar los IDs que devolvió el request 2, separados por coma.
+GET {{baseUrl}}/items?ids=MLA3992358166,MLA3992358156&attributes=id,title,price,currency_id,available_quantity,status,thumbnail,permalink
+Authorization: Bearer {{token}}
+
+### 4. Detalle de una publicación
+GET {{baseUrl}}/items/{{itemId}}
+Authorization: Bearer {{token}}
+
+### 4b. Descripción de una publicación
+GET {{baseUrl}}/items/{{itemId}}/description
+Authorization: Bearer {{token}}
+
+### 5. Preguntas sin responder del usuario (mismo request que usa la app)
+GET {{baseUrl}}/questions/search?seller_id={{sellerId}}&api_version=4&status=UNANSWERED&sort_fields=date_created&sort_types=DESC&offset=0&limit=20
+Authorization: Bearer {{token}}
+
+### 6. Preguntas respondidas (históricas) del usuario
+GET {{baseUrl}}/questions/search?seller_id={{sellerId}}&api_version=4&status=ANSWERED&sort_fields=date_created&sort_types=DESC&offset=0&limit=20
+Authorization: Bearer {{token}}
+
+### 7. Preguntas de UNA publicación (viejas y nuevas, con respuesta)
+# No lo usa la app; filtra por item. Verificar en la respuesta que vengan preguntas.
+GET {{baseUrl}}/questions/search?item={{itemId}}&api_version=4&sort_fields=date_created&sort_types=DESC&offset=0&limit=50
+Authorization: Bearer {{token}}
+
+### 7b. Preguntas de una publicación filtradas por estado
+GET {{baseUrl}}/questions/search?item={{itemId}}&status=ANSWERED&api_version=4&sort_fields=date_created&sort_types=DESC&offset=0&limit=50
+Authorization: Bearer {{token}}
+
+### 8. Una pregunta puntual (con su respuesta si la tiene)
+GET {{baseUrl}}/questions/13664524614?api_version=4
+Authorization: Bearer {{token}}
+
+### 9. Obtener el token (OAuth) — paso 1: abrir en el navegador y autorizar
+# https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id={{clientId}}&redirect_uri={{appBaseUrl}}/api/meli/callback
+# Del redirect se copia el valor de `code` (vale una sola vez, expira rápido).
+
+### 9b. Obtener el token (OAuth) — paso 2: canjear el code por access_token
+POST {{baseUrl}}/oauth/token
+Accept: application/json
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&client_id={{clientId}}&client_secret={{clientSecret}}&code=TG-REEMPLAZAR&redirect_uri={{appBaseUrl}}/api/meli/callback
+
+### 9c. Renovar el token (el refresh_token es de un solo uso: guardar el nuevo)
+POST {{baseUrl}}/oauth/token
+Accept: application/json
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token&client_id={{clientId}}&client_secret={{clientSecret}}&refresh_token=REEMPLAZAR

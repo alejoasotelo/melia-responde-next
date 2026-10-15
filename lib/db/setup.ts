@@ -69,6 +69,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  adminer:
+    image: adminer:4.8.1
+    container_name: next_saas_starter_adminer
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+
 volumes:
   postgres_data:
 `;
