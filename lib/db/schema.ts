@@ -7,6 +7,8 @@ import {
   integer,
   bigint,
   unique,
+  index,
+  numeric,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -87,10 +89,90 @@ export const meliAccounts = pgTable(
     accessToken: text('access_token').notNull(),
     refreshToken: text('refresh_token'),
     tokenExpiresAt: timestamp('token_expires_at').notNull(),
+    questionsSyncedAt: timestamp('questions_synced_at'),
+    itemsSyncedAt: timestamp('items_synced_at'),
+    // Lock so only one sync runs per account at a time.
+    syncStartedAt: timestamp('sync_started_at'),
+    lastSyncError: text('last_sync_error'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (t) => [unique().on(t.teamId, t.meliUserId)]
+);
+
+// Local copy of the account's listings, refreshed by lib/meli/sync.ts.
+export const meliItems = pgTable(
+  'meli_items',
+  {
+    id: serial('id').primaryKey(),
+    meliAccountId: integer('meli_account_id')
+      .notNull()
+      .references(() => meliAccounts.id, { onDelete: 'cascade' }),
+    itemId: varchar('item_id', { length: 20 }).notNull(),
+    title: text('title').notNull(),
+    thumbnail: text('thumbnail'),
+    permalink: text('permalink'),
+    price: numeric('price', { precision: 14, scale: 2 }),
+    currencyId: varchar('currency_id', { length: 10 }),
+    availableQuantity: integer('available_quantity'),
+    // active | paused | closed | ... ; 'unlisted' = no longer returned by MercadoLibre
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    syncedAt: timestamp('synced_at').notNull().defaultNow(),
+  },
+  (t) => [
+    unique().on(t.meliAccountId, t.itemId),
+    index('meli_items_account_status_idx').on(t.meliAccountId, t.status),
+  ]
+);
+
+// Local copy of questions. Rows are never deleted: this is the history.
+export const meliQuestions = pgTable(
+  'meli_questions',
+  {
+    id: serial('id').primaryKey(),
+    meliAccountId: integer('meli_account_id')
+      .notNull()
+      .references(() => meliAccounts.id, { onDelete: 'cascade' }),
+    meliQuestionId: bigint('meli_question_id', { mode: 'number' }).notNull(),
+    itemId: varchar('item_id', { length: 20 }).notNull(),
+    text: text('text').notNull(),
+    // UNANSWERED | ANSWERED | CLOSED_UNANSWERED | UNDER_REVIEW | BANNED | DELETED | ...
+    status: varchar('status', { length: 30 }).notNull(),
+    fromUserId: bigint('from_user_id', { mode: 'number' }),
+    dateCreated: timestamp('date_created').notNull(),
+    answerText: text('answer_text'),
+    answerDate: timestamp('answer_date'),
+    firstSeenAt: timestamp('first_seen_at').notNull().defaultNow(),
+    syncedAt: timestamp('synced_at').notNull().defaultNow(),
+  },
+  (t) => [
+    unique().on(t.meliAccountId, t.meliQuestionId),
+    index('meli_questions_account_status_idx').on(
+      t.meliAccountId,
+      t.status,
+      t.dateCreated
+    ),
+  ]
+);
+
+// Answers published from this app (one row per question; retries update it).
+export const answerSubmissions = pgTable(
+  'answer_submissions',
+  {
+    id: serial('id').primaryKey(),
+    meliAccountId: integer('meli_account_id')
+      .notNull()
+      .references(() => meliAccounts.id, { onDelete: 'cascade' }),
+    meliQuestionId: bigint('meli_question_id', { mode: 'number' }).notNull(),
+    text: text('text').notNull(),
+    sentBy: integer('sent_by').references(() => users.id),
+    sentAt: timestamp('sent_at').notNull().defaultNow(),
+    batchId: varchar('batch_id', { length: 36 }).notNull(),
+    // pending | sent | failed | skipped
+    status: varchar('status', { length: 10 }).notNull(),
+    error: text('error'),
+  },
+  (t) => [unique().on(t.meliAccountId, t.meliQuestionId)]
 );
 
 // Extra text the seller writes per listing; fed to the AI when drafting answers.
@@ -193,6 +275,9 @@ export type ActivityLog = typeof activityLogs.$inferSelect;
 export type NewActivityLog = typeof activityLogs.$inferInsert;
 export type MeliAccount = typeof meliAccounts.$inferSelect;
 export type NewMeliAccount = typeof meliAccounts.$inferInsert;
+export type MeliItem = typeof meliItems.$inferSelect;
+export type MeliQuestionRow = typeof meliQuestions.$inferSelect;
+export type AnswerSubmission = typeof answerSubmissions.$inferSelect;
 export type MeliItemContext = typeof meliItemContexts.$inferSelect;
 export type QuestionDraft = typeof questionDrafts.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
@@ -216,4 +301,5 @@ export enum ActivityType {
   ACCEPT_INVITATION = 'ACCEPT_INVITATION',
   CONNECT_MELI_ACCOUNT = 'CONNECT_MELI_ACCOUNT',
   DISCONNECT_MELI_ACCOUNT = 'DISCONNECT_MELI_ACCOUNT',
+  SEND_MELI_ANSWERS = 'SEND_MELI_ANSWERS',
 }

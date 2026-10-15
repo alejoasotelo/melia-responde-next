@@ -1,39 +1,49 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, lt, or } from 'drizzle-orm';
+import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { db } from '@/lib/db/drizzle';
-import { questionDrafts } from '@/lib/db/schema';
-import { getMeliAccountForTeam } from '@/lib/db/queries';
 import {
-  fetchMeliItems,
-  MeliApiError,
-  searchMeliQuestions,
-  type MeliQuestionStatus
-} from '@/lib/meli/api';
+  answerSubmissions,
+  meliItems,
+  meliQuestions,
+  questionDrafts,
+  users
+} from '@/lib/db/schema';
+import { getMeliAccountForTeam } from '@/lib/db/queries';
 import { getMeliContext, selectMeliAccount } from '@/lib/meli/context';
-import { getMeliAccessToken } from '@/lib/meli/tokens';
+import { ensureFresh } from '@/lib/meli/sync';
 import { AccountSelector } from '../account-selector';
+import { SyncBar } from '../sync-bar';
 import { QuestionsBoard, type QuestionView } from './questions-board';
 
 const PAGE_SIZE = 20;
 
-const TABS: { status: MeliQuestionStatus; label: string }[] = [
+type Status = 'UNANSWERED' | 'ANSWERED';
+
+const TABS: { status: Status; label: string }[] = [
   { status: 'UNANSWERED', label: 'Sin responder' },
-  { status: 'ANSWERED', label: 'Respondidas' }
+  { status: 'ANSWERED', label: 'Respondidas (histórico)' }
 ];
 
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleString('es-AR', {
-    dateStyle: 'short',
-    timeStyle: 'short'
-  });
+const formatDate = (date: Date) =>
+  date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function QuestionsPage({
   searchParams
 }: {
-  searchParams: Promise<{ account?: string; status?: string; page?: string }>;
+  searchParams: Promise<{
+    account?: string;
+    status?: string;
+    page?: string;
+    q?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const ctx = await getMeliContext();
   if (!ctx) redirect('/sign-in');
@@ -62,83 +72,114 @@ export default async function QuestionsPage({
     );
   }
 
-  const status: MeliQuestionStatus =
-    params.status === 'ANSWERED' ? 'ANSWERED' : 'UNANSWERED';
+  const status: Status = params.status === 'ANSWERED' ? 'ANSWERED' : 'UNANSWERED';
   const page = Math.max(1, Math.floor(Number(params.page)) || 1);
+  const q = params.q?.trim().slice(0, 100) || '';
+  const from = params.from && DATE.test(params.from) ? params.from : '';
+  const to = params.to && DATE.test(params.to) ? params.to : '';
+
+  // Data comes from our database; MercadoLibre is only hit when it is stale.
+  const account = await getMeliAccountForTeam(current.id, ctx.team.id);
+  if (!account) redirect('/dashboard/meli');
+  await ensureFresh(account, 'questions');
+  const fresh = (await getMeliAccountForTeam(current.id, ctx.team.id)) ?? account;
 
   const href = (overrides: { status?: string; page?: number }) => {
-    const q = new URLSearchParams({
+    const query = new URLSearchParams({
       account: String(current.id),
       status: overrides.status ?? status,
       page: String(overrides.page ?? 1)
     });
-    return `/dashboard/questions?${q}`;
+    if (q) query.set('q', q);
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
+    return `/dashboard/questions?${query}`;
   };
 
-  let total = 0;
-  let views: QuestionView[] = [];
-  let errorMessage: string | null = null;
+  const dateColumn =
+    status === 'ANSWERED' ? meliQuestions.answerDate : meliQuestions.dateCreated;
+  const where = and(
+    eq(meliQuestions.meliAccountId, current.id),
+    eq(meliQuestions.status, status),
+    q
+      ? or(
+          ilike(meliQuestions.text, `%${q}%`),
+          ilike(meliQuestions.answerText, `%${q}%`)
+        )
+      : undefined,
+    from ? gte(dateColumn, new Date(`${from}T00:00:00`)) : undefined,
+    to
+      ? lt(dateColumn, new Date(new Date(`${to}T00:00:00`).getTime() + 86_400_000))
+      : undefined
+  );
 
-  try {
-    const account = await getMeliAccountForTeam(current.id, ctx.team.id);
-    if (!account) throw new MeliApiError('Account not found', 404);
+  const [[{ total }], [{ draftCount }], rows] = await Promise.all([
+    db.select({ total: count() }).from(meliQuestions).where(where),
+    db
+      .select({ draftCount: count() })
+      .from(questionDrafts)
+      .where(eq(questionDrafts.meliAccountId, current.id)),
+    db
+      .select({
+        question: meliQuestions,
+        itemTitle: meliItems.title,
+        itemThumbnail: meliItems.thumbnail,
+        itemPermalink: meliItems.permalink,
+        draft: questionDrafts.draft,
+        sentByName: users.name,
+        sentByEmail: users.email,
+        submissionStatus: answerSubmissions.status
+      })
+      .from(meliQuestions)
+      .leftJoin(
+        meliItems,
+        and(
+          eq(meliItems.meliAccountId, meliQuestions.meliAccountId),
+          eq(meliItems.itemId, meliQuestions.itemId)
+        )
+      )
+      .leftJoin(
+        questionDrafts,
+        and(
+          eq(questionDrafts.meliAccountId, meliQuestions.meliAccountId),
+          eq(questionDrafts.meliQuestionId, meliQuestions.meliQuestionId)
+        )
+      )
+      .leftJoin(
+        answerSubmissions,
+        and(
+          eq(answerSubmissions.meliAccountId, meliQuestions.meliAccountId),
+          eq(answerSubmissions.meliQuestionId, meliQuestions.meliQuestionId),
+          eq(answerSubmissions.status, 'sent')
+        )
+      )
+      .leftJoin(users, eq(users.id, answerSubmissions.sentBy))
+      .where(where)
+      .orderBy(desc(dateColumn))
+      .limit(PAGE_SIZE)
+      .offset((page - 1) * PAGE_SIZE)
+  ]);
 
-    const token = await getMeliAccessToken(account);
-    const result = await searchMeliQuestions(token, {
-      sellerId: current.meliUserId,
-      status,
-      offset: (page - 1) * PAGE_SIZE,
-      limit: PAGE_SIZE
-    });
-    total = result.total;
-    const [items, drafts] = await Promise.all([
-      fetchMeliItems(
-        token,
-        result.questions.map((q) => q.item_id)
-      ),
-      result.questions.length
-        ? db
-            .select()
-            .from(questionDrafts)
-            .where(
-              and(
-                eq(questionDrafts.meliAccountId, current.id),
-                inArray(
-                  questionDrafts.meliQuestionId,
-                  result.questions.map((q) => q.id)
-                )
-              )
-            )
-        : []
-    ]);
-    const draftByQuestion = new Map(drafts.map((d) => [d.meliQuestionId, d.draft]));
-
-    views = result.questions.map((question) => {
-      const item = items[question.item_id];
-      return {
-        id: question.id,
-        text: question.text,
-        dateLabel: formatDate(question.date_created),
-        itemId: question.item_id,
-        itemTitle: item?.title ?? null,
-        itemThumbnail: item?.thumbnail ?? null,
-        itemPermalink: item?.permalink ?? null,
-        answer: question.answer
-          ? {
-              text: question.answer.text,
-              dateLabel: formatDate(question.answer.date_created)
-            }
-          : null,
-        draft: draftByQuestion.get(question.id) ?? null
-      };
-    });
-  } catch (error) {
-    console.error('Error loading MercadoLibre questions:', error);
-    errorMessage =
-      error instanceof MeliApiError && [400, 401, 403].includes(error.status)
-        ? 'MercadoLibre rechazó el acceso de esta cuenta. Volvé a conectarla desde la sección MercadoLibre.'
-        : 'No pudimos cargar las preguntas. Intentá de nuevo en unos minutos.';
-  }
+  const views: QuestionView[] = rows.map((r) => ({
+    id: r.question.meliQuestionId,
+    text: r.question.text,
+    dateLabel: formatDate(r.question.dateCreated),
+    itemId: r.question.itemId,
+    itemTitle: r.itemTitle,
+    itemThumbnail: r.itemThumbnail,
+    itemPermalink: r.itemPermalink,
+    answer: r.question.answerText
+      ? {
+          text: r.question.answerText,
+          dateLabel: r.question.answerDate ? formatDate(r.question.answerDate) : '',
+          sentBy:
+            r.submissionStatus === 'sent'
+              ? (r.sentByName ?? r.sentByEmail ?? 'un usuario del equipo')
+              : null
+        }
+      : null,
+    draft: r.draft
+  }));
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -162,30 +203,54 @@ export default async function QuestionsPage({
         )}
       </div>
 
-      <div className="mb-4 flex gap-2">
-        {TABS.map((tab) => (
-          <Button
-            key={tab.status}
-            asChild
-            size="sm"
-            variant={tab.status === status ? 'secondary' : 'ghost'}
-          >
-            <Link href={href({ status: tab.status })}>{tab.label}</Link>
+      <SyncBar
+        accountId={current.id}
+        kind="questions"
+        syncedAtLabel={fresh.questionsSyncedAt ? formatDate(fresh.questionsSyncedAt) : null}
+        lastError={fresh.lastSyncError}
+      />
+
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex gap-2">
+          {TABS.map((tab) => (
+            <Button
+              key={tab.status}
+              asChild
+              size="sm"
+              variant={tab.status === status ? 'secondary' : 'ghost'}
+            >
+              <Link href={href({ status: tab.status })}>{tab.label}</Link>
+            </Button>
+          ))}
+        </div>
+        <form action="/dashboard/questions" className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="account" value={current.id} />
+          <input type="hidden" name="status" value={status} />
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="Buscar texto"
+            aria-label="Buscar en preguntas y respuestas"
+            className="h-9 w-40 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          />
+          <input type="date" name="from" defaultValue={from} aria-label="Desde" className="h-9 rounded-md border bg-background px-2 text-sm" />
+          <input type="date" name="to" defaultValue={to} aria-label="Hasta" className="h-9 rounded-md border bg-background px-2 text-sm" />
+          <Button type="submit" size="sm" variant="outline">
+            <Search />
+            Filtrar
           </Button>
-        ))}
+        </form>
       </div>
 
-      {errorMessage ? (
-        <p className="rounded-md bg-red-50 p-3 text-sm text-red-600">
-          {errorMessage}
-        </p>
-      ) : views.length === 0 ? (
+      {views.length === 0 ? (
         <Card>
           <CardContent>
             <p className="text-muted-foreground">
-              {status === 'UNANSWERED'
-                ? 'No tenés preguntas sin responder. ¡Todo al día!'
-                : 'Todavía no hay preguntas respondidas.'}
+              {q || from || to
+                ? 'No hay preguntas que coincidan con el filtro.'
+                : status === 'UNANSWERED'
+                  ? 'No tenés preguntas sin responder. ¡Todo al día!'
+                  : 'Todavía no hay preguntas respondidas.'}
             </p>
           </CardContent>
         </Card>
@@ -193,9 +258,10 @@ export default async function QuestionsPage({
         <>
           <QuestionsBoard
             // Reset selection when switching account/tab/page.
-            key={`${current.id}-${status}-${page}`}
+            key={`${current.id}-${status}-${page}-${q}-${from}-${to}`}
             accountId={current.id}
             questions={views}
+            accountDraftCount={draftCount}
             selectable={status === 'UNANSWERED'}
           />
 
@@ -217,9 +283,7 @@ export default async function QuestionsPage({
                 <Link
                   href={href({ page: page + 1 })}
                   aria-disabled={page >= totalPages}
-                  className={
-                    page >= totalPages ? 'pointer-events-none opacity-50' : ''
-                  }
+                  className={page >= totalPages ? 'pointer-events-none opacity-50' : ''}
                 >
                   Siguiente
                 </Link>

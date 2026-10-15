@@ -1,27 +1,23 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray } from 'drizzle-orm';
 import { Package, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { db } from '@/lib/db/drizzle';
-import { meliItemContexts } from '@/lib/db/schema';
+import { meliItemContexts, meliItems } from '@/lib/db/schema';
 import { getMeliAccountForTeam } from '@/lib/db/queries';
-import {
-  fetchMeliItems,
-  MeliApiError,
-  searchMeliItemIds,
-  type MeliItemStatus,
-  type MeliItemSummary
-} from '@/lib/meli/api';
 import { getMeliContext, selectMeliAccount } from '@/lib/meli/context';
-import { getMeliAccessToken } from '@/lib/meli/tokens';
+import { ensureFresh } from '@/lib/meli/sync';
 import { AccountSelector } from '../account-selector';
+import { SyncBar } from '../sync-bar';
 import { ContextForm } from './context-form';
+
+type ItemStatus = 'active' | 'paused';
 
 const PAGE_SIZE = 20;
 
-const TABS: { status: MeliItemStatus; label: string }[] = [
+const TABS: { status: ItemStatus; label: string }[] = [
   { status: 'active', label: 'Activas' },
   { status: 'paused', label: 'Pausadas' }
 ];
@@ -63,7 +59,7 @@ export default async function ItemsPage({
     );
   }
 
-  const status: MeliItemStatus = params.status === 'paused' ? 'paused' : 'active';
+  const status: ItemStatus = params.status === 'paused' ? 'paused' : 'active';
   const page = Math.max(1, Math.floor(Number(params.page)) || 1);
   const q = params.q?.trim().slice(0, 100) || '';
 
@@ -77,53 +73,41 @@ export default async function ItemsPage({
     return `/dashboard/items?${query}`;
   };
 
-  let total = 0;
-  let items: MeliItemSummary[] = [];
-  let contexts = new Map<string, string>();
-  let errorMessage: string | null = null;
+  const account = await getMeliAccountForTeam(current.id, ctx.team.id);
+  if (!account) redirect('/dashboard/meli');
+  await ensureFresh(account, 'items');
+  const fresh = (await getMeliAccountForTeam(current.id, ctx.team.id)) ?? account;
 
-  try {
-    const account = await getMeliAccountForTeam(current.id, ctx.team.id);
-    if (!account) throw new MeliApiError('Account not found', 404);
-
-    const token = await getMeliAccessToken(account);
-    const result = await searchMeliItemIds(token, {
-      sellerId: current.meliUserId,
-      status,
-      q,
-      offset: (page - 1) * PAGE_SIZE,
-      limit: PAGE_SIZE
-    });
-    total = result.total;
-
-    const [details, rows] = await Promise.all([
-      fetchMeliItems(
-        token,
-        result.ids,
-        'id,title,thumbnail,permalink,price,currency_id,available_quantity,status'
-      ),
-      result.ids.length
-        ? db
-            .select()
-            .from(meliItemContexts)
-            .where(
-              and(
-                eq(meliItemContexts.meliAccountId, current.id),
-                inArray(meliItemContexts.itemId, result.ids)
-              )
+  const where = and(
+    eq(meliItems.meliAccountId, current.id),
+    eq(meliItems.status, status),
+    q ? ilike(meliItems.title, `%${q}%`) : undefined
+  );
+  const [[{ total }], items] = await Promise.all([
+    db.select({ total: count() }).from(meliItems).where(where),
+    db
+      .select()
+      .from(meliItems)
+      .where(where)
+      .orderBy(desc(meliItems.syncedAt), meliItems.title)
+      .limit(PAGE_SIZE)
+      .offset((page - 1) * PAGE_SIZE)
+  ]);
+  const contextRows = items.length
+    ? await db
+        .select()
+        .from(meliItemContexts)
+        .where(
+          and(
+            eq(meliItemContexts.meliAccountId, current.id),
+            inArray(
+              meliItemContexts.itemId,
+              items.map((i) => i.itemId)
             )
-        : []
-    ]);
-    // Keep the order MercadoLibre returned the ids in.
-    items = result.ids.flatMap((id) => (details[id] ? [details[id]] : []));
-    contexts = new Map(rows.map((r) => [r.itemId, r.context]));
-  } catch (error) {
-    console.error('Error loading MercadoLibre items:', error);
-    errorMessage =
-      error instanceof MeliApiError && [400, 401, 403].includes(error.status)
-        ? 'MercadoLibre rechazó el acceso de esta cuenta. Volvé a conectarla desde la sección MercadoLibre.'
-        : 'No pudimos cargar las publicaciones. Intentá de nuevo en unos minutos.';
-  }
+          )
+        )
+    : [];
+  const contexts = new Map(contextRows.map((r) => [r.itemId, r.context]));
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -146,6 +130,20 @@ export default async function ItemsPage({
           </p>
         )}
       </div>
+
+      <SyncBar
+        accountId={current.id}
+        kind="items"
+        syncedAtLabel={
+          fresh.itemsSyncedAt
+            ? fresh.itemsSyncedAt.toLocaleString('es-AR', {
+                dateStyle: 'short',
+                timeStyle: 'short'
+              })
+            : null
+        }
+        lastError={fresh.lastSyncError}
+      />
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-2">
@@ -177,11 +175,7 @@ export default async function ItemsPage({
         </form>
       </div>
 
-      {errorMessage ? (
-        <p className="rounded-md bg-red-50 p-3 text-sm text-red-600">
-          {errorMessage}
-        </p>
-      ) : items.length === 0 ? (
+      {items.length === 0 ? (
         <Card>
           <CardContent>
             <p className="text-muted-foreground">
@@ -195,7 +189,7 @@ export default async function ItemsPage({
         <>
           <ul className="space-y-4">
             {items.map((item) => (
-              <li key={item.id}>
+              <li key={item.itemId}>
                 <Card className="gap-3 py-4">
                   <CardContent className="space-y-4">
                     <div className="flex items-start gap-3">
@@ -225,18 +219,18 @@ export default async function ItemsPage({
                           <p className="font-medium">{item.title}</p>
                         )}
                         <p className="text-sm text-muted-foreground">
-                          {item.id}
+                          {item.itemId}
                           {item.price != null &&
-                            ` · ${item.currency_id ?? ''} ${item.price.toLocaleString('es-AR')}`}
-                          {item.available_quantity != null &&
-                            ` · Stock: ${item.available_quantity}`}
+                            ` · ${item.currencyId ?? ''} ${Number(item.price).toLocaleString('es-AR')}`}
+                          {item.availableQuantity != null &&
+                            ` · Stock: ${item.availableQuantity}`}
                         </p>
                       </div>
                     </div>
                     <ContextForm
                       accountId={current.id}
-                      itemId={item.id}
-                      context={contexts.get(item.id) ?? ''}
+                      itemId={item.itemId}
+                      context={contexts.get(item.itemId) ?? ''}
                     />
                   </CardContent>
                 </Card>

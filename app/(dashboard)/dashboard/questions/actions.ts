@@ -7,15 +7,20 @@ import { db } from '@/lib/db/drizzle';
 import {
   meliAccounts,
   meliItemContexts,
+  meliQuestions,
   questionDrafts
 } from '@/lib/db/schema';
 import { getMeliAccountForTeam } from '@/lib/db/queries';
 import { generateAnswerDraft } from '@/lib/ai/openai';
 import {
   fetchMeliItemDetail,
-  getMeliQuestion,
   type MeliItemDetail
 } from '@/lib/meli/api';
+import {
+  MAX_SEND_PER_CLICK,
+  sendDraftsForAccount,
+  type SendState
+} from '@/lib/meli/send';
 import { getMeliContext } from '@/lib/meli/context';
 import { getMeliAccessToken } from '@/lib/meli/tokens';
 
@@ -57,19 +62,25 @@ export async function generateDrafts(
   try {
     const token = await getMeliAccessToken(account);
 
-    // Re-read each question from MercadoLibre instead of trusting the client.
-    const fetched = await Promise.allSettled(
-      questionIds.map((id) => getMeliQuestion(token, id))
-    );
-    const questions = fetched.flatMap((r) =>
-      r.status === 'fulfilled' &&
-      r.value.seller_id === account.meliUserId &&
-      r.value.status === 'UNANSWERED'
-        ? [r.value]
-        : []
-    );
+    // Read the questions from our own database, scoped to this account, so
+    // ids sent by the client can't reach other accounts' data.
+    const rows = await db
+      .select()
+      .from(meliQuestions)
+      .where(
+        and(
+          eq(meliQuestions.meliAccountId, account.id),
+          eq(meliQuestions.status, 'UNANSWERED'),
+          inArray(meliQuestions.meliQuestionId, questionIds)
+        )
+      );
+    const questions = rows.map((r) => ({
+      id: r.meliQuestionId,
+      item_id: r.itemId,
+      text: r.text
+    }));
     if (questions.length === 0) {
-      return { error: 'No se pudieron leer las preguntas seleccionadas.' };
+      return { error: 'No se encontraron las preguntas seleccionadas. Sincronizá e intentá de nuevo.' };
     }
 
     const itemIds = [...new Set(questions.map((q) => q.item_id))];
@@ -181,4 +192,36 @@ export async function deleteDraft(formData: FormData) {
   const where = await findOwnedDraft(formData);
   await db.delete(questionDrafts).where(where);
   revalidatePath('/dashboard/questions');
+}
+
+// ------------------------------------------------------------ send drafts
+
+const sendSchema = z.object({
+  accountId: z.coerce.number().int(),
+  questionIds: z.array(z.coerce.number().int()).max(MAX_SEND_PER_CLICK)
+});
+
+export async function sendDrafts(
+  _prev: SendState,
+  formData: FormData
+): Promise<SendState> {
+  const ctx = await getMeliContext();
+  if (!ctx) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' };
+
+  const parsed = sendSchema.safeParse({
+    accountId: formData.get('accountId'),
+    questionIds: formData.getAll('questionId')
+  });
+  if (!parsed.success) return { error: parsed.error.errors[0].message };
+
+  const account = await getMeliAccountForTeam(parsed.data.accountId, ctx.team.id);
+  if (!account) return { error: 'Cuenta no encontrada.' };
+
+  const result = await sendDraftsForAccount({
+    account,
+    userId: ctx.user.id,
+    questionIds: parsed.data.questionIds
+  });
+  revalidatePath('/dashboard/questions');
+  return result;
 }

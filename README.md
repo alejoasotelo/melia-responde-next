@@ -82,6 +82,14 @@ When you're ready to deploy your SaaS application to production, follow these st
 2. Enable the "Planes y suscripciones" (`subscription_preapproval`) topic.
 3. Copy the signing secret into `MP_WEBHOOK_SECRET`.
 
+### Set up the MercadoLibre webhook
+
+1. In the MercadoLibre DevCenter, set the notifications URL to `https://yourdomain.com/api/meli/webhook`.
+2. Subscribe to the `questions` and `items` topics.
+3. Give the application read **and write** permissions (writing is needed to publish answers from the app). Accounts connected earlier with read-only permission must be reconnected.
+
+Questions and listings are stored in the database and refreshed by webhook, on demand when older than `MELI_SYNC_TTL_SECONDS`, and with the "Sincronizar" button.
+
 ### Deploy to Vercel
 
 1. Push your code to a GitHub repository.

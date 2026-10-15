@@ -1,6 +1,7 @@
 import 'server-only';
 
-const API_URL = 'https://api.mercadolibre.com';
+// MELI_API_URL only exists so tests can point at a mock server.
+const API_URL = process.env.MELI_API_URL || 'https://api.mercadolibre.com';
 
 export const MELI_STATE_COOKIE = 'meli_oauth_state';
 
@@ -258,4 +259,25 @@ export async function searchMeliItemIds(
     url
   );
   return { total: data.paging?.total ?? 0, ids: data.results ?? [] };
+}
+
+// Publishes an answer. Needs the app to have write permission on MercadoLibre.
+export async function postMeliAnswer(
+  accessToken: string,
+  questionId: number,
+  text: string
+) {
+  const res = await fetch(`${API_URL}/answers`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ question_id: questionId, text }),
+    cache: 'no-store'
+  });
+  if (!res.ok) {
+    throw new MeliApiError(await res.text().catch(() => ''), res.status);
+  }
+  return res.json();
 }
