@@ -1,6 +1,6 @@
 import { desc, and, eq, isNull } from 'drizzle-orm';
 import { db } from './drizzle';
-import { activityLogs, teamMembers, teams, users } from './schema';
+import { activityLogs, meliAccounts, teamMembers, teams, users } from './schema';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/session';
 
@@ -34,34 +34,6 @@ export async function getUser() {
   }
 
   return user[0];
-}
-
-export async function getTeamByStripeCustomerId(customerId: string) {
-  const result = await db
-    .select()
-    .from(teams)
-    .where(eq(teams.stripeCustomerId, customerId))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : null;
-}
-
-export async function updateTeamSubscription(
-  teamId: number,
-  subscriptionData: {
-    stripeSubscriptionId: string | null;
-    stripeProductId: string | null;
-    planName: string | null;
-    subscriptionStatus: string;
-  }
-) {
-  await db
-    .update(teams)
-    .set({
-      ...subscriptionData,
-      updatedAt: new Date()
-    })
-    .where(eq(teams.id, teamId));
 }
 
 export async function getUserWithTeam(userId: number) {
@@ -127,4 +99,30 @@ export async function getTeamForUser() {
   });
 
   return result?.team || null;
+}
+
+// Never selects the token columns, so these rows are safe to hand to the UI.
+export async function getMeliAccountsForTeam(teamId: number) {
+  return await db
+    .select({
+      id: meliAccounts.id,
+      meliUserId: meliAccounts.meliUserId,
+      nickname: meliAccounts.nickname,
+      siteId: meliAccounts.siteId,
+      tokenExpiresAt: meliAccounts.tokenExpiresAt,
+      createdAt: meliAccounts.createdAt
+    })
+    .from(meliAccounts)
+    .where(eq(meliAccounts.teamId, teamId))
+    .orderBy(meliAccounts.createdAt);
+}
+
+// Full row including encrypted tokens: server-side use only.
+export async function getMeliAccountForTeam(accountId: number, teamId: number) {
+  const result = await db
+    .select()
+    .from(meliAccounts)
+    .where(and(eq(meliAccounts.id, accountId), eq(meliAccounts.teamId, teamId)))
+    .limit(1);
+  return result[0] ?? null;
 }

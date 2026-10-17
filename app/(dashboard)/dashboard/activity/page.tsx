@@ -9,6 +9,9 @@ import {
   UserMinus,
   Mail,
   CheckCircle,
+  Store,
+  Unplug,
+  Send,
   type LucideIcon,
 } from 'lucide-react';
 import { ActivityType } from '@/lib/db/schema';
@@ -25,6 +28,9 @@ const iconMap: Record<ActivityType, LucideIcon> = {
   [ActivityType.REMOVE_TEAM_MEMBER]: UserMinus,
   [ActivityType.INVITE_TEAM_MEMBER]: Mail,
   [ActivityType.ACCEPT_INVITATION]: CheckCircle,
+  [ActivityType.CONNECT_MELI_ACCOUNT]: Store,
+  [ActivityType.DISCONNECT_MELI_ACCOUNT]: Unplug,
+  [ActivityType.SEND_MELI_ANSWERS]: Send,
 };
 
 function getRelativeTime(date: Date) {
@@ -63,6 +69,12 @@ function formatAction(action: ActivityType): string {
       return 'You invited a team member';
     case ActivityType.ACCEPT_INVITATION:
       return 'You accepted an invitation';
+    case ActivityType.CONNECT_MELI_ACCOUNT:
+      return 'You connected a MercadoLibre account';
+    case ActivityType.DISCONNECT_MELI_ACCOUNT:
+      return 'You disconnected a MercadoLibre account';
+    case ActivityType.SEND_MELI_ANSWERS:
+      return 'You sent answers to MercadoLibre';
     default:
       return 'Unknown action occurred';
   }

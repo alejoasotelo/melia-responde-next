@@ -1,0 +1,2 @@
+ALTER TABLE "meli_accounts" DROP CONSTRAINT "meli_accounts_meli_user_id_unique";--> statement-breakpoint
+ALTER TABLE "meli_accounts" ADD CONSTRAINT "meli_accounts_team_id_meli_user_id_unique" UNIQUE("team_id","meli_user_id");
