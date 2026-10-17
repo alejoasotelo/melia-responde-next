@@ -1,0 +1,64 @@
+# @name chat_completions
+
+POST https://openrouter.ai/api/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{OPENROUTER_API_KEY}}
+
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "max_completion_tokens": 500,
+  "messages": [
+    { 
+      "role": "system", 
+      "content": [
+        {
+          "type": "text",
+          "text": "{{SYSTEM_PROMPT}}"
+        },
+        {
+          "type": "text", 
+          "text": "{{SYSTEM_PROMPT_SUFFIX}}", 
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      ] 
+    },
+    { 
+      "role": "user", 
+      "content": "{{USER_PROMPT}}" 
+    }
+  ],
+  "stream": false
+}
+
+
+###
+
+
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "weather",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "City or location name"
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Temperature in Celsius"
+          },
+          "conditions": {
+            "type": "string",
+            "description": "Weather conditions description"
+          }
+        },
+        "required": ["location", "temperature", "conditions"],
+        "additionalProperties": false
+      }
+    }
+  }
